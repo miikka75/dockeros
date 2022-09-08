@@ -1,0 +1,44 @@
+version: '3.5'
+
+services:
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy
+    container_name: nginx-proxy
+    hostname: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ${PROXY_CONF_DIR}:/etc/nginx/conf.d
+      - ${PROXY_VHOST_DIR}:/etc/nginx/vhost.d
+      - ${PROXY_HTML_DIR}:/usr/share/nginx/html
+      - ${PROXY_CERTS_DIR}:/etc/nginx/certs:ro
+      - ${DOCKER_SOCKET}:/tmp/docker.sock:ro
+      - ./proxy_settings.conf:/etc/nginx/conf.d/proxy_settings.conf:ro
+    restart: always
+    networks:
+      - nginx-proxy-tier
+
+  acme-companion:
+    image: nginxproxy/acme-companion
+    container_name: nginx-proxy-acme
+    environment:
+      - DEFAULT_EMAIL
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - ${PROXY_CERTS_DIR}:/etc/nginx/certs:rw
+      - ${PROXY_ACME_DIR}:/etc/acme.sh
+      - ${DOCKER_SOCKET}:/var/run/docker.sock:ro
+    restart: always
+    networks:
+      - nginx-proxy-tier
+    depends_on:
+      - nginx-proxy
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.depends-on: "nginx-proxy"
+
+networks:
+  nginx-proxy-tier:
+    name: nginx-proxy-tier

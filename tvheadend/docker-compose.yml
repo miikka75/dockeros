@@ -1,0 +1,21 @@
+---
+version: '2.1'
+services:
+  tvheadend:
+    image: lscr.io/linuxserver/tvheadend:latest
+    container_name: tvheadend
+    volumes:
+      - ${TVH_RECORDINGS_DIR}:/recordings
+      - ${TVH_CONFIG_DIR}:/config
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ${PERMISSIONS_CONF_DIR}/config/custom-cont-init.d:/config/custom-cont-init.d
+      - ${PERMISSIONS_CONF_DIR}/config/custom-services.d:/config/custom-services.d
+    environment:
+      - PUID
+      - PGID
+    ports:
+      - 9981:9981
+      - 9982:9982
+    restart: unless-stopped
+    network_mode: host

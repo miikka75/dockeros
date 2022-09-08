@@ -1,0 +1,100 @@
+version: '3'
+services:
+  db:
+    image: mariadb
+    container_name: nextcloud-mariadb
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    volumes:
+      # Workaround until fixed: https://github.com/MariaDB/mariadb-docker/issues/236
+      - ${PERMISSIONS_CONF_DIR}/db:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - MYSQL_ROOT_PASSWORD
+      - MYSQL_PASSWORD
+      - MYSQL_DATABASE
+      - MYSQL_USER
+    restart: unless-stopped
+    networks:
+      - nginx-proxy-tier
+
+  redis:
+    image: redis:alpine
+    container_name: nextcloud-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    restart: always
+    networks:
+      - nginx-proxy-tier
+
+  app:
+    image: nextcloud:latest
+    container_name: nextcloud-app
+    user: ${PUID}:${PGID}
+    volumes:
+      - ${NEXTCLOUD_HTML_DIR}:/var/www/html
+      # Workaround until fixed: https://github.com/nextcloud/docker/issues/763
+      - ${PERMISSIONS_CONF_DIR}/redis-session.ini:/usr/local/etc/php/conf.d/redis-session.ini
+      # Workaround until fixed: https://github.com/nextcloud/docker/issues/1494
+      - ${PERMISSIONS_CONF_DIR}/remoteip.conf:/etc/apache2/conf-enabled/remoteip.conf:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      # Use the `remoteip.conf` workaround above instead
+      # - APACHE_DISABLE_REWRITE_IP: 1
+      - VIRTUAL_HOST
+      - LETSENCRYPT_EMAIL
+      - LETSENCRYPT_HOST
+      - NEXTCLOUD_TRUSTED_DOMAINS=${VIRTUAL_HOST}
+      - TRUSTED_PROXIES=nginx-proxy ${VIRTUAL_HOST}
+      - OVERWRITEPROTOCOL=https
+      - OVERWRITECLIURL=https://${VIRTUAL_HOST}
+      # Can't initialize to Virtualbox shared folder using NEXTCLOUD_DATA_DIR
+      # - NEXTCLOUD_DATA_DIR
+      # Disabled until fixed: https://github.com/nextcloud/docker/issues/582
+      # - NEXTCLOUD_ADMIN_USER
+      # - NEXTCLOUD_ADMIN_PASSWORD
+      - REDIS_HOST
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
+      - MYSQL_DATABASE
+      - MYSQL_USER
+      - MYSQL_PASSWORD
+      - MYSQL_HOST
+      - SMTP_HOST
+      - SMTP_SECURE
+      - SMTP_PORT
+      - SMTP_AUTHTYPE
+      - SMTP_NAME
+      - SMTP_PASSWORD
+      - MAIL_FROM_ADDRESS
+      - MAIL_DOMAIN
+      - NC_default_phone_region=${REGION}
+    restart: unless-stopped
+    networks:
+      - nginx-proxy-tier
+    depends_on:
+      - db
+      - redis
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.depends-on: "db, redis"
+
+  cron:
+    image: nextcloud:latest
+    container_name: nextcloud-cron
+    # user: ${PUID}:${PGID}
+    # Workaround (entrypoint + command) for not being able to run this container as regular user
+    entrypoint: /bin/sh
+    command: -c "useradd ${USER} --system --uid ${PUID} --shell /usr/sbin/nologin && cd /var/spool/cron/crontabs && mv www-data ${USER} && /cron.sh"
+    volumes:
+      - ${NEXTCLOUD_HTML_DIR}:/var/www/html
+    restart: always
+    networks:
+      - nginx-proxy-tier
+    depends_on:
+      - db
+      - redis
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.depends-on: "db, redis"
+
+networks:
+  nginx-proxy-tier:
+    external: true
